@@ -8,6 +8,7 @@ import types
 import functools
 
 from fnmatch import fnmatch
+from importlib.util import find_spec
 
 from . import case, suite, util
 
@@ -112,13 +113,28 @@ class TestLoader(object):
         if module is None:
             parts_copy = parts[:]
             while parts_copy:
+                # Search for the given module.
                 try:
-                    module = __import__('.'.join(parts_copy))
-                    break
-                except ImportError:
+                    spec = find_spec('.'.join(parts_copy))
+                # Note that find_spec uses __import__(...,
+                # fromlist=["path"]) internally and that in turn might
+                # fail for bogus packages. This problem manifests as an
+                # AttributeError so we catch that as well.
+                except (ImportError, AttributeError):
+                    spec = None
+
+                if spec is None:
                     del parts_copy[-1]
                     if not parts_copy:
-                        raise
+                        raise ImportError("%s not found" % name)
+                else:
+                    # Only if we found a module do we import it. This
+                    # way we can distinguish module-not-found errors
+                    # from actual import errors in the module, e.g.,
+                    # because a dependency cannot be resolved, and allow
+                    # for easy trouble shooting by the user.
+                    module = __import__('.'.join(parts_copy))
+                    break
             parts = parts[1:]
         obj = module
         for part in parts:
